@@ -1,9 +1,11 @@
 import { Rower } from './ftms.js';
 import {
   initMap, updateProgress, getRoute, toggleFollow, planRoute, cancelPlan,
-  getProgressMeters, invalidateMapSize,
+  getProgressMeters, invalidateMapSize, setRoute,
 } from './map.js';
 import { initStreetView, updateStreetView, clearStreetViewCache, checkCoverage } from './streetview.js';
+import { DEMO_ROUTE } from './route.js';
+import { listRoutes, saveRoute, deleteRoute, encodeRoute, decodeRoute } from './storage.js';
 import { GOOGLE_MAPS_API_KEY } from './config.js';
 
 const rower = new Rower();
@@ -18,6 +20,10 @@ const routeBtn = document.getElementById('routeBtn');
 const streetViewBtn = document.getElementById('streetViewBtn');
 const mapEl = document.getElementById('map');
 const streetViewEl = document.getElementById('streetview');
+const routeSelect = document.getElementById('routeSelect');
+const saveBtn = document.getElementById('saveBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const shareBtn = document.getElementById('shareBtn');
 const demoBtn = document.getElementById('demoBtn');
 const logView = document.getElementById('log');
 
@@ -250,6 +256,84 @@ async function reportCoverage() {
   }
 }
 
+let activeRouteId = '__current';
+
+function currentPoints() {
+  return getRoute().points.map((p) => [p.lat, p.lng]);
+}
+
+function setHash(points) {
+  history.replaceState(null, '', '#r=' + encodeRoute(points));
+}
+
+function routeFromHash() {
+  const match = location.hash.match(/[#&]r=([^&]+)/);
+  return match ? decodeRoute(decodeURIComponent(match[1])) : null;
+}
+
+function refreshRouteSelect(value = activeRouteId) {
+  const saved = listRoutes();
+  routeSelect.innerHTML = '';
+  routeSelect.add(new Option('Aktuelle Route', '__current'));
+  routeSelect.add(new Option('Standard (Müggelheim)', '__demo'));
+  for (const route of saved) routeSelect.add(new Option(route.name, route.id));
+  routeSelect.value = [...routeSelect.options].some((o) => o.value === value) ? value : '__current';
+  deleteBtn.disabled = !saved.some((route) => route.id === routeSelect.value);
+}
+
+function loadRoute(points, id, { updateUrl = true } = {}) {
+  setRoute(points);
+  clearStreetViewCache();
+  activeRouteId = id;
+  if (updateUrl) setHash(points);
+  refreshRouteSelect(id);
+  if (streetViewActive) {
+    updateStreetView(getProgressMeters(), getRoute());
+    reportCoverage();
+  }
+}
+
+routeSelect.addEventListener('change', () => {
+  const value = routeSelect.value;
+  if (value === '__current') return;
+  if (value === '__demo') {
+    loadRoute(DEMO_ROUTE.points, '__demo');
+    return;
+  }
+  const saved = listRoutes().find((route) => route.id === value);
+  if (saved) loadRoute(saved.points, saved.id);
+});
+
+saveBtn.addEventListener('click', () => {
+  const name = (prompt('Name der Route:', 'Neue Route') || '').trim();
+  if (!name) return;
+  const id = saveRoute(name, currentPoints());
+  activeRouteId = id;
+  setHash(currentPoints());
+  refreshRouteSelect(id);
+  log('Route gespeichert: ' + name);
+});
+
+deleteBtn.addEventListener('click', () => {
+  const saved = listRoutes().find((route) => route.id === routeSelect.value);
+  if (!saved) return;
+  deleteRoute(saved.id);
+  activeRouteId = '__current';
+  refreshRouteSelect('__current');
+  log('Route gelöscht: ' + saved.name);
+});
+
+shareBtn.addEventListener('click', async () => {
+  setHash(currentPoints());
+  const url = location.href;
+  try {
+    await navigator.clipboard.writeText(url);
+    log('Link kopiert: ' + url);
+  } catch {
+    log('Link: ' + url);
+  }
+});
+
 routeBtn.addEventListener('click', async () => {
   if (planning) {
     cancelPlan();
@@ -265,6 +349,9 @@ routeBtn.addEventListener('click', async () => {
       },
     });
     clearStreetViewCache();
+    activeRouteId = '__current';
+    setHash(currentPoints());
+    refreshRouteSelect('__current');
     if (streetViewActive) {
       updateStreetView(getProgressMeters(), getRoute());
       reportCoverage();
@@ -328,4 +415,11 @@ async function autoConnect() {
 
 resetTiles();
 initMap('map');
+const sharedRoute = routeFromHash();
+if (sharedRoute) {
+  loadRoute(sharedRoute, '__current', { updateUrl: false });
+} else {
+  activeRouteId = '__demo';
+  refreshRouteSelect('__demo');
+}
 autoConnect();

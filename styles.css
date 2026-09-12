@@ -65,6 +65,27 @@ button.primary { background: var(--accent); color: #04121c; border-color: transp
 
 main { padding: 18px; }
 
+.routebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: 1100px;
+  margin: 0 auto 12px;
+}
+
+.routebar select {
+  font: inherit;
+  min-height: 44px;
+  padding: 10px 12px;
+  flex: 1;
+  min-width: 180px;
+  background: #232936;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
 #map,
 #streetview {
   height: 46vh;
