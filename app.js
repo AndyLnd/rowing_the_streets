@@ -1,9 +1,9 @@
 import { Rower } from './ftms.js';
 import {
   initMap, updateProgress, getRoute, toggleFollow, planRoute, cancelPlan,
-  getCurrentPoint, invalidateMapSize,
+  getProgressMeters, invalidateMapSize,
 } from './map.js';
-import { initStreetView, updateStreetView } from './streetview.js';
+import { initStreetView, updateStreetView, clearStreetViewCache, checkCoverage } from './streetview.js';
 import { GOOGLE_MAPS_API_KEY } from './config.js';
 
 const rower = new Rower();
@@ -95,7 +95,7 @@ function render(data) {
   }
   if (data.totalDistance != null) {
     updateProgress(data.totalDistance);
-    if (streetViewActive) updateStreetView(getCurrentPoint());
+    if (streetViewActive) updateStreetView(data.totalDistance, getRoute());
   }
 }
 
@@ -240,6 +240,16 @@ overviewBtn.addEventListener('click', () => {
 let planning = false;
 let streetViewActive = false;
 
+async function reportCoverage() {
+  try {
+    const cov = await checkCoverage(getRoute(), GOOGLE_MAPS_API_KEY, { step: 100 });
+    const gaps = cov.gaps.length ? ` – Lücken bei ${cov.gaps.slice(0, 12).join(', ')} m` : '';
+    log(`Street-View-Abdeckung: ${cov.percent}% (${cov.covered}/${cov.total})${gaps}`);
+  } catch (error) {
+    log('Abdeckungsprüfung fehlgeschlagen: ' + error.message);
+  }
+}
+
 routeBtn.addEventListener('click', async () => {
   if (planning) {
     cancelPlan();
@@ -254,6 +264,11 @@ routeBtn.addEventListener('click', async () => {
         statusText.textContent = message;
       },
     });
+    clearStreetViewCache();
+    if (streetViewActive) {
+      updateStreetView(getProgressMeters(), getRoute());
+      reportCoverage();
+    }
   } catch {
     // Fehler/Abbruch wurde bereits geloggt
   } finally {
@@ -277,7 +292,8 @@ streetViewBtn.addEventListener('click', async () => {
     streetViewEl.hidden = false;
     mapEl.hidden = true;
     streetViewBtn.textContent = 'Karte';
-    updateStreetView(getCurrentPoint());
+    updateStreetView(getProgressMeters(), getRoute());
+    reportCoverage();
   } catch (error) {
     log('Street View: ' + error.message);
   }

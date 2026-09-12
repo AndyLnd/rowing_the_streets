@@ -30,6 +30,10 @@ export function getCurrentPoint() {
   return lastPoint;
 }
 
+export function getProgressMeters() {
+  return Math.min(lastMeters, route.length);
+}
+
 export function invalidateMapSize() {
   if (map) map.invalidateSize();
 }
