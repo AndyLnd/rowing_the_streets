@@ -1,0 +1,10 @@
+{
+  "name": "row-row-row",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "config": "node scripts/env-to-config.mjs",
+    "serve": "npm run config && python3 -m http.server 8000",
+    "test": "node rower-data.test.mjs && node route.test.mjs"
+  }
+}
