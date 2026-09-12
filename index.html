@@ -2,55 +2,78 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Row Row Row</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="statusbar">
-    <span class="dot idle" id="dot"></span>
-    <span id="statusText">Nicht verbunden</span>
-    <span class="spacer"></span>
-    <button id="connectBtn" class="primary">Rudergerät verbinden</button>
-    <button id="allBtn">Alle Geräte anzeigen</button>
-    <button id="disconnectBtn" hidden>Trennen</button>
-    <button id="startBtn" hidden>Training starten</button>
-    <button id="overviewBtn">Übersicht</button>
-    <button id="routeBtn">Route planen</button>
-    <button id="streetViewBtn">Street View</button>
-    <button id="demoBtn">Demo</button>
-  </header>
+  <div id="stage">
+    <div id="streetview"></div>
+    <div id="map" class="map--mini" title="Karte öffnen"></div>
 
-  <main>
-    <div class="routebar">
-      <select id="routeSelect"></select>
-      <button id="saveBtn">Speichern</button>
-      <button id="deleteBtn">Löschen</button>
-      <button id="shareBtn">Teilen</button>
+    <header class="topbar">
+      <button id="menuBtn" aria-label="Menü" aria-expanded="false">☰</button>
+      <span class="dot idle" id="dot"></span>
+      <span id="statusText">Nicht verbunden</span>
+    </header>
+
+    <section class="hud" id="hud"></section>
+  </div>
+
+  <div id="backdrop" hidden></div>
+
+  <aside id="menu" aria-hidden="true">
+    <div class="menu-head">
+      <strong>Menü</strong>
+      <button id="menuClose" aria-label="Schließen">✕</button>
     </div>
-    <div id="map"></div>
-    <div id="streetview" hidden></div>
-    <section class="hud" id="hud">
-      <div class="tile wide" data-key="elapsed"><span class="v">–</span><span class="l">Zeit</span></div>
-      <div class="tile wide" data-key="distance"><span class="v">–</span><span class="l">Distanz</span></div>
-      <div class="tile wide" data-key="route"><span class="v">–</span><span class="l">Strecke</span></div>
-      <div class="tile" data-key="pace"><span class="v">–</span><span class="l">Pace</span></div>
-      <div class="tile" data-key="avgPace"><span class="v">–</span><span class="l">Ø Pace</span></div>
-      <div class="tile" data-key="strokeRate"><span class="v">–</span><span class="l">Schläge/min</span></div>
-      <div class="tile" data-key="strokeCount"><span class="v">–</span><span class="l">Schläge</span></div>
-      <div class="tile" data-key="power"><span class="v">–</span><span class="l">Power</span></div>
-      <div class="tile" data-key="avgPower"><span class="v">–</span><span class="l">Ø Power</span></div>
-      <div class="tile" data-key="calories"><span class="v">–</span><span class="l">Kalorien</span></div>
-      <div class="tile" data-key="heartRate"><span class="v">–</span><span class="l">Herzfrequenz</span></div>
-      <div class="tile" data-key="met"><span class="v">–</span><span class="l">MET</span></div>
-    </section>
-  </main>
+    <div class="menu-body">
+      <section>
+        <h3>Gerät</h3>
+        <div class="row">
+          <button id="connectBtn" class="primary">Verbinden</button>
+          <button id="allBtn">Alle Geräte</button>
+        </div>
+        <div class="row">
+          <button id="startBtn" hidden>Training starten</button>
+          <button id="disconnectBtn" hidden>Trennen</button>
+        </div>
+      </section>
 
-  <details class="debug">
-    <summary>Debug</summary>
-    <pre id="log"></pre>
-  </details>
+      <section>
+        <h3>Route</h3>
+        <select id="routeSelect"></select>
+        <div class="row">
+          <button id="routeBtn">Route planen</button>
+          <button id="saveBtn">Speichern</button>
+        </div>
+        <div class="row">
+          <button id="deleteBtn">Löschen</button>
+          <button id="shareBtn">Teilen</button>
+        </div>
+      </section>
+
+      <section>
+        <h3>Ansicht</h3>
+        <div class="row">
+          <button id="viewBtn">Karte groß</button>
+          <button id="overviewBtn">Übersicht</button>
+        </div>
+        <h4>HUD-Werte</h4>
+        <div id="hudOptions" class="hud-options"></div>
+      </section>
+
+      <section>
+        <h3>Extras</h3>
+        <div class="row">
+          <button id="demoBtn">Demo</button>
+          <button id="debugBtn">Debug-Log</button>
+        </div>
+        <pre id="log" hidden></pre>
+      </section>
+    </div>
+  </aside>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="app.js"></script>

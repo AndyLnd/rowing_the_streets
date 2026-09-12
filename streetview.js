@@ -44,6 +44,7 @@ export async function initStreetView(containerId, apiKey) {
     addressControl: false,
     showRoadLabels: false,
     enableCloseButton: false,
+    zoomControl: false,
   });
   service = new StreetViewService();
   streetViewSource = StreetViewSource;

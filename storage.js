@@ -1,4 +1,5 @@
 const KEY = 'row.routes';
+const HUD_KEY = 'row.hud';
 
 export function listRoutes() {
   try {
@@ -29,4 +30,17 @@ export function decodeRoute(text) {
   const points = text.split(';').map((pair) => pair.split(',').map(Number));
   const valid = points.length >= 2 && points.every(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
   return valid ? points : null;
+}
+
+export function getHudFields() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HUD_KEY));
+    return Array.isArray(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setHudFields(fields) {
+  localStorage.setItem(HUD_KEY, JSON.stringify(fields));
 }

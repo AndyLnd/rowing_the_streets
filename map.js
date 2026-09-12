@@ -12,12 +12,16 @@ let startMarker;
 let endMarker;
 let trackLine;
 let marker;
+let layerControl;
+let zoomControl;
 let pick = null;
 let tempStart = null;
 let following = true;
 let followViewSet = false;
 let lastMeters = 0;
 let lastPoint = null;
+let mode = 'mini';
+let onOpenFull = null;
 
 const START = { radius: 7, color: '#34d399', fillColor: '#34d399', fillOpacity: 1 };
 const END = { radius: 7, color: '#f87171', fillColor: '#f87171', fillOpacity: 1 };
@@ -39,7 +43,8 @@ export function invalidateMapSize() {
 }
 
 export function initMap(containerId) {
-  map = L.map(containerId);
+  map = L.map(containerId, { zoomControl: false });
+  map.attributionControl.setPrefix(false);
   const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap',
@@ -49,7 +54,7 @@ export function initMap(containerId) {
     { maxZoom: 19, attribution: 'Tiles © Esri' },
   );
   streets.addTo(map);
-  L.control.layers({ Karte: streets, Satellit: satellite }).addTo(map);
+  layerControl = L.control.layers({ Karte: streets, Satellit: satellite });
 
   routeLine = L.polyline([], { color: '#38bdf8', weight: 4, opacity: 0.8 }).addTo(map);
   startMarker = L.circleMarker([0, 0], START).addTo(map);
@@ -60,9 +65,43 @@ export function initMap(containerId) {
   map.on('dragstart', () => {
     following = false;
   });
-  map.on('click', handlePick);
+  map.on('click', (event) => {
+    if (mode === 'mini') {
+      onOpenFull?.();
+      return;
+    }
+    handlePick(event);
+  });
 
   applyRoute(route.points.map((p) => [p.lat, p.lng]));
+  setMapMode('mini');
+}
+
+export function setMapMode(next) {
+  if (!map) return;
+  mode = next;
+  const full = next === 'full';
+  const container = map.getContainer();
+  container.classList.toggle('map--full', full);
+  container.classList.toggle('map--mini', !full);
+  for (const name of ['dragging', 'scrollWheelZoom', 'doubleClickZoom', 'touchZoom', 'boxZoom', 'keyboard']) {
+    if (map[name]) map[name][full ? 'enable' : 'disable']();
+  }
+  if (layerControl) {
+    if (full) layerControl.addTo(map);
+    else layerControl.remove();
+  }
+  if (full) {
+    zoomControl ??= L.control.zoom({ position: 'bottomright' });
+    zoomControl.addTo(map);
+  } else if (zoomControl) {
+    zoomControl.remove();
+  }
+  setTimeout(() => map.invalidateSize(), 60);
+}
+
+export function setOpenFullHandler(handler) {
+  onOpenFull = handler;
 }
 
 function applyRoute(latlngs) {

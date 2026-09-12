@@ -1,30 +1,38 @@
 import { Rower } from './ftms.js';
 import {
   initMap, updateProgress, getRoute, toggleFollow, planRoute, cancelPlan,
-  getProgressMeters, invalidateMapSize, setRoute,
+  getProgressMeters, setRoute, setMapMode, setOpenFullHandler,
 } from './map.js';
 import { initStreetView, updateStreetView, clearStreetViewCache, checkCoverage } from './streetview.js';
 import { DEMO_ROUTE } from './route.js';
-import { listRoutes, saveRoute, deleteRoute, encodeRoute, decodeRoute } from './storage.js';
+import {
+  listRoutes, saveRoute, deleteRoute, encodeRoute, decodeRoute,
+  getHudFields, setHudFields,
+} from './storage.js';
 import { GOOGLE_MAPS_API_KEY } from './config.js';
 
 const rower = new Rower();
 const dot = document.getElementById('dot');
 const statusText = document.getElementById('statusText');
+const menuBtn = document.getElementById('menuBtn');
+const menu = document.getElementById('menu');
+const menuClose = document.getElementById('menuClose');
+const backdrop = document.getElementById('backdrop');
+const hud = document.getElementById('hud');
+const hudOptions = document.getElementById('hudOptions');
 const connectBtn = document.getElementById('connectBtn');
 const allBtn = document.getElementById('allBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const startBtn = document.getElementById('startBtn');
 const overviewBtn = document.getElementById('overviewBtn');
+const viewBtn = document.getElementById('viewBtn');
 const routeBtn = document.getElementById('routeBtn');
-const streetViewBtn = document.getElementById('streetViewBtn');
-const mapEl = document.getElementById('map');
-const streetViewEl = document.getElementById('streetview');
 const routeSelect = document.getElementById('routeSelect');
 const saveBtn = document.getElementById('saveBtn');
 const deleteBtn = document.getElementById('deleteBtn');
 const shareBtn = document.getElementById('shareBtn');
 const demoBtn = document.getElementById('demoBtn');
+const debugBtn = document.getElementById('debugBtn');
 const logView = document.getElementById('log');
 
 const STATUS_LABEL = {
@@ -35,10 +43,29 @@ const STATUS_LABEL = {
   disconnected: 'Verbindung verloren',
 };
 
-const TILE_KEYS = [
-  'elapsed', 'distance', 'route', 'pace', 'avgPace', 'strokeRate',
-  'strokeCount', 'power', 'avgPower', 'calories', 'heartRate', 'met',
+const FIELDS = [
+  { key: 'elapsed', label: 'Zeit' },
+  { key: 'distance', label: 'Distanz' },
+  { key: 'pace', label: 'Pace /500m' },
+  { key: 'strokeRate', label: 'Schläge/min' },
+  { key: 'route', label: 'Strecke' },
+  { key: 'avgPace', label: 'Ø Pace /500m' },
+  { key: 'strokeCount', label: 'Schläge' },
+  { key: 'power', label: 'Power' },
+  { key: 'avgPower', label: 'Ø Power' },
+  { key: 'calories', label: 'Kalorien' },
+  { key: 'heartRate', label: 'Herzfrequenz' },
+  { key: 'met', label: 'MET' },
 ];
+const DEFAULT_HUD = ['elapsed', 'distance', 'pace', 'strokeRate', 'strokeCount'];
+
+let hudFields = (getHudFields() ?? DEFAULT_HUD).filter((key) => FIELDS.some((f) => f.key === key));
+if (!hudFields.length) hudFields = [...DEFAULT_HUD];
+
+let view = 'row';
+let streetViewReady = false;
+let planning = false;
+let activeRouteId = '__current';
 
 function log(message) {
   const line = `${new Date().toLocaleTimeString()}  ${message}`;
@@ -59,7 +86,7 @@ function fmtTime(seconds) {
 
 function fmtPace(secPer500) {
   if (secPer500 == null || secPer500 === 0) return null;
-  return `${fmtTime(secPer500)} /500m`;
+  return fmtTime(secPer500);
 }
 
 function fmtDistance(meters) {
@@ -71,7 +98,7 @@ function fmt(value, digits = 0) {
   return value == null ? null : value.toFixed(digits);
 }
 
-function toTiles(data) {
+function toValues(data) {
   return {
     elapsed: fmtTime(data.elapsedTime),
     distance: fmtDistance(data.totalDistance),
@@ -90,18 +117,113 @@ function toTiles(data) {
   };
 }
 
+function buildHud() {
+  hud.innerHTML = '';
+  for (const key of hudFields) {
+    const field = FIELDS.find((f) => f.key === key);
+    if (!field) continue;
+    const cell = document.createElement('div');
+    cell.className = 'hud-cell na';
+    cell.dataset.key = key;
+    const value = document.createElement('span');
+    value.className = 'v';
+    value.textContent = '–';
+    const label = document.createElement('span');
+    label.className = 'l';
+    label.textContent = field.label;
+    cell.append(value, label);
+    hud.appendChild(cell);
+  }
+}
+
+function buildHudOptions() {
+  hudOptions.innerHTML = '';
+  for (const field of FIELDS) {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = hudFields.includes(field.key);
+    input.addEventListener('change', () => {
+      hudFields = input.checked
+        ? [...hudFields, field.key]
+        : hudFields.filter((key) => key !== field.key);
+      setHudFields(hudFields);
+      buildHud();
+    });
+    label.append(input, document.createTextNode(field.label));
+    hudOptions.appendChild(label);
+  }
+}
+
 function render(data) {
-  const tiles = toTiles(data);
-  for (const key of TILE_KEYS) {
-    const tile = document.querySelector(`.tile[data-key="${key}"]`);
-    if (!tile) continue;
-    const value = tiles[key];
-    tile.querySelector('.v').textContent = value ?? '–';
-    tile.classList.toggle('na', value == null);
+  const values = toValues(data);
+  for (const cell of hud.querySelectorAll('.hud-cell')) {
+    const value = values[cell.dataset.key];
+    cell.querySelector('.v').textContent = value ?? '–';
+    cell.classList.toggle('na', value == null);
   }
   if (data.totalDistance != null) {
     updateProgress(data.totalDistance);
-    if (streetViewActive) updateStreetView(data.totalDistance, getRoute());
+    if (streetViewReady) updateStreetView(data.totalDistance, getRoute());
+  }
+}
+
+function resetHud() {
+  for (const cell of hud.querySelectorAll('.hud-cell')) {
+    cell.querySelector('.v').textContent = '–';
+    cell.classList.add('na');
+  }
+}
+
+function openMenu() {
+  menu.classList.add('open');
+  backdrop.hidden = false;
+  menuBtn.setAttribute('aria-expanded', 'true');
+}
+
+function closeMenu() {
+  menu.classList.remove('open');
+  backdrop.hidden = true;
+  menuBtn.setAttribute('aria-expanded', 'false');
+}
+
+menuBtn.addEventListener('click', openMenu);
+menuClose.addEventListener('click', closeMenu);
+backdrop.addEventListener('click', closeMenu);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeMenu();
+});
+
+function setView(next) {
+  view = next;
+  const isMap = next === 'map';
+  setMapMode(isMap ? 'full' : 'mini');
+  hud.hidden = isMap;
+  viewBtn.textContent = isMap ? 'Street View' : 'Karte groß';
+}
+
+viewBtn.addEventListener('click', () => {
+  closeMenu();
+  if (view === 'row') {
+    setView('map');
+  } else if (streetViewReady) {
+    setView('row');
+  } else {
+    initStreetViewSafe();
+  }
+});
+
+async function initStreetViewSafe() {
+  try {
+    await initStreetView('streetview', GOOGLE_MAPS_API_KEY);
+    streetViewReady = true;
+    setView('row');
+    updateStreetView(getProgressMeters(), getRoute());
+    reportCoverage();
+  } catch (error) {
+    streetViewReady = false;
+    log('Street View: ' + error.message);
+    setView('map');
   }
 }
 
@@ -123,15 +245,6 @@ function logRaw(hex) {
   if (rawCount <= 3 || now - lastRawAt > 2000) {
     lastRawAt = now;
     log('RAW: ' + hex);
-  }
-}
-
-function resetTiles() {
-  for (const key of TILE_KEYS) {
-    const tile = document.querySelector(`.tile[data-key="${key}"]`);
-    if (!tile) continue;
-    tile.querySelector('.v').textContent = '–';
-    tile.classList.add('na');
   }
 }
 
@@ -166,7 +279,7 @@ function stopDemo() {
   clearInterval(demoTimer);
   demoTimer = null;
   demoBtn.textContent = 'Demo';
-  resetTiles();
+  resetHud();
   updateProgress(0);
 }
 
@@ -178,8 +291,8 @@ rower.addEventListener('state', (event) => {
   connectBtn.hidden = state === 'ready' || state === 'connecting' || state === 'subscribing';
   disconnectBtn.hidden = state !== 'ready';
   startBtn.hidden = state !== 'ready';
-  if (state === 'ready') log(`Verbunden: ${name}`);
   if (state === 'ready') {
+    log(`Verbunden: ${name}`);
     lastDataAt = Date.now();
     dataWarned = false;
   }
@@ -243,9 +356,6 @@ overviewBtn.addEventListener('click', () => {
   overviewBtn.textContent = toggleFollow() ? 'Übersicht' : 'Folgen';
 });
 
-let planning = false;
-let streetViewActive = false;
-
 async function reportCoverage() {
   try {
     const cov = await checkCoverage(getRoute(), GOOGLE_MAPS_API_KEY, { step: 100 });
@@ -255,8 +365,6 @@ async function reportCoverage() {
     log('Abdeckungsprüfung fehlgeschlagen: ' + error.message);
   }
 }
-
-let activeRouteId = '__current';
 
 function currentPoints() {
   return getRoute().points.map((p) => [p.lat, p.lng]);
@@ -287,7 +395,7 @@ function loadRoute(points, id, { updateUrl = true } = {}) {
   activeRouteId = id;
   if (updateUrl) setHash(points);
   refreshRouteSelect(id);
-  if (streetViewActive) {
+  if (streetViewReady && view === 'row') {
     updateStreetView(getProgressMeters(), getRoute());
     reportCoverage();
   }
@@ -339,8 +447,10 @@ routeBtn.addEventListener('click', async () => {
     cancelPlan();
     return;
   }
+  closeMenu();
   planning = true;
   routeBtn.textContent = 'Abbrechen';
+  setView('map');
   try {
     await planRoute({
       onStatus: (message) => {
@@ -352,43 +462,26 @@ routeBtn.addEventListener('click', async () => {
     activeRouteId = '__current';
     setHash(currentPoints());
     refreshRouteSelect('__current');
-    if (streetViewActive) {
-      updateStreetView(getProgressMeters(), getRoute());
-      reportCoverage();
-    }
   } catch {
     // Fehler/Abbruch wurde bereits geloggt
   } finally {
     planning = false;
     routeBtn.textContent = 'Route planen';
-  }
-});
-
-streetViewBtn.addEventListener('click', async () => {
-  if (streetViewActive) {
-    streetViewActive = false;
-    streetViewEl.hidden = true;
-    mapEl.hidden = false;
-    streetViewBtn.textContent = 'Street View';
-    invalidateMapSize();
-    return;
-  }
-  try {
-    await initStreetView('streetview', GOOGLE_MAPS_API_KEY);
-    streetViewActive = true;
-    streetViewEl.hidden = false;
-    mapEl.hidden = true;
-    streetViewBtn.textContent = 'Karte';
-    updateStreetView(getProgressMeters(), getRoute());
-    reportCoverage();
-  } catch (error) {
-    log('Street View: ' + error.message);
+    if (streetViewReady) {
+      setView('row');
+      updateStreetView(getProgressMeters(), getRoute());
+      reportCoverage();
+    }
   }
 });
 
 demoBtn.addEventListener('click', () => {
   demoRunning = !demoRunning;
   demoRunning ? startDemo() : stopDemo();
+});
+
+debugBtn.addEventListener('click', () => {
+  logView.hidden = !logView.hidden;
 });
 
 async function autoConnect() {
@@ -413,8 +506,11 @@ async function autoConnect() {
   }
 }
 
-resetTiles();
 initMap('map');
+setOpenFullHandler(() => setView('map'));
+buildHud();
+buildHudOptions();
+
 const sharedRoute = routeFromHash();
 if (sharedRoute) {
   loadRoute(sharedRoute, '__current', { updateUrl: false });
@@ -422,4 +518,7 @@ if (sharedRoute) {
   activeRouteId = '__demo';
   refreshRouteSelect('__demo');
 }
+
+setView('row');
+initStreetViewSafe();
 autoConnect();
